@@ -8,3 +8,5 @@ Topsoil maps were pulled from https://data.apps.fao.org/map/catalog/srv/eng/cata
 The probabilities of establishment were pulled from https://peerj.com/articles/14661/
 
 Bacterial Wilt Incidence estimation pulled from https://www.mdpi.com/2073-4395/11/8/1541
+
+The User Guide to Impact Network Analysis, and full parameter explanations https://www.mdpi.com/2073-4395/11/8/1541
