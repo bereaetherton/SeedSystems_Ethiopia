@@ -1,4 +1,4 @@
-note: cropharvest <- raster("spam2017V2r1_SSA_H_POTA_A.tif") is pulled from MapSPAM, as denoted in the README in main
+note: cropharvest <- raster("spam2017V2r1_SSA_H_POTA_A.tif") is pulled from MapSPAM:  https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/FSSKBW
 
 *****************************************
 * SPAM 2017 V2r1          * Dec-17-2020 *
