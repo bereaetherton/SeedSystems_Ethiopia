@@ -9,4 +9,4 @@ The probabilities of establishment were pulled from https://peerj.com/articles/1
 
 Bacterial Wilt Incidence estimation pulled from https://www.mdpi.com/2073-4395/11/8/1541
 
-The User Guide to Impact Network Analysis, and full parameter explanations https://www.mdpi.com/2073-4395/11/8/1541
+The User Guide to Impact Network Analysis, and full parameter explanations https://cgspace.cgiar.org/handle/10568/111326
