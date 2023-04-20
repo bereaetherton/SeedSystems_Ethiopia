@@ -1,0 +1,409 @@
+---
+title: "Potato cropland connectivity in Ethiopia"
+author: "A. Plex"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+  
+    df_print: paged
+---
+
+
+========================================================
+
+
+
+# Introduction and set values of parameters (No change needed)
+
+```{r, warning=FALSE, message=FALSE}
+## 1.1 Load the following packages
+library(raster)
+library(igraph)
+library(rworldmap)
+library(geosphere)
+data("countriesLow")
+library("colorspace") 
+library(viridis)
+
+#------------ Set palette
+palette1 <- viridis_pal(option = "inferno",direction = -1, end = 0.95)(43)
+paldif4 <- diverge_hcl(51, c = 100, l = c(20, 90), power = 1.3  ) # palette for difference
+#----------- Setting geographic extent-------------------
+latifrom2 <- 2.9 #latitude: from -58 to 60
+latito2 <- 17
+longifrom2 <- 32 #longitude: from -140 to -34
+longito2<- 48
+west_ext <- extent(longifrom2, longito2, latifrom2, latito2)
+```
+
+
+# Import crop data (Need changes for different crops)
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+## Customize crop and values of parameters
+beta0<-0.5                                       ###
+beta<-1                                          ###
+beta1<-1.5                                       ###
+gamma00<-0.05                                    ###
+gamma0<-0.1                                      ###
+gamma<-0.2                                       ###
+gamma1<-0.3                                      ###
+gamma2<-1                                        ###
+crop<-'Potato'                                  ###
+cutoffadja <- 0.00001 # cutoff of adjacency matrix  
+cutoff<-0.00001
+
+### Potato including rain-fed and irrigated
+cropharvest <- raster("spam2017V2r1_SSA_H_POTA_A.tif")
+cropharvest <- cropharvest / 10000
+```
+
+
+# Total mean aggregation resolution = 1 (Need changes for different resolution)
+
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+Resolution <- 2 # Set aggregated resolution, for example, assign 12 for 1 degree.
+#------ total mean aggregration-------------------
+cropharvestAGG <- aggregate(cropharvest, fact = Resolution, fun=sum, na.action = na.omit)
+cropharvestAGGTM <- cropharvestAGG / Resolution / Resolution 
+#----------- crop cropland area for the west hemisphere ----------
+#totalmeanW <- cropharvestAGG
+cropharvestAGGTM_crop <- crop(cropharvestAGGTM, west_ext)   
+#----------- Extract cropland density data -----------------------
+CropValues <- getValues(cropharvestAGGTM_crop)
+CropValuesAzero <- which(CropValues > cutoff)
+cropValue <- CropValues[CropValuesAzero]
+#----------- Extract coordinates for "povalue" cells ---------
+lon <- NULL # xmin
+lat <- NULL # ymax
+
+for(i in 1:length(CropValuesAzero)){
+  temp <- extentFromCells(cropharvestAGGTM_crop, CropValuesAzero[i])
+  AVxminO <- temp[1]
+  lon <- c(lon, AVxminO)
+  AVymaxO <- temp[4]
+  lat <- c(lat, AVymaxO)
+}
+#-------------------------------------------------# Prepare arguments elements values for the CCRI funtions
+cropdata1 <- data.frame(lon, lat, cropValue)
+#adjustConstant <- 2 # to adjust the distance and make sure the distance >1
+latilongimatr <- cropdata1[ ,c(1:2)]# save the latitude and longitude as new matrix  
+#---- use Geosphere package, function distVincentyEllipsoid() is used to calculate the distance, defult distance is meter
+dvse <- distVincentyEllipsoid(c(0,0), cbind(1, 0)) # reference of standard distance in meter for one degree
+    latilongimatr <- as.matrix(latilongimatr)
+    TemMat <- matrix(-999, nrow( latilongimatr),nrow(latilongimatr))
+  
+    for (i in 1:nrow(latilongimatr)) {
+      TemMat[i, ] <- distVincentyEllipsoid(latilongimatr[i,], latilongimatr)/dvse
+    }
+distance_matrix <- TemMat
+```
+
+
+# CCRI calculated by Inverse power-law function 
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+CCRI_powerlaw_function <- function(beta, cutoffadja, distance_matrix, lon, lat, cropValue, cropRaster, CellNumber)   {
+    ##############################################
+    #### create adjacency matrix
+    
+    distancematr <- distance_matrix # pairwise distance matrix
+  #---- end of code
+    distancematrexp <- distancematr^(-beta) #use function C=AX^(-beta), here A=1, X=distancematr
+    cropmatr <- cropValue # complete gravity model with crop data
+    cropmatr1 <- matrix(cropmatr, , 1 )
+    cropmatr2 <- matrix(cropmatr, 1, )
+
+    cropmatrix <- cropmatr1 %*% cropmatr2
+    cropmatrix <- as.matrix(cropmatrix)
+    cropdistancematr <- distancematrexp * cropmatrix # adjacecy matrix
+    logicalmatr <- cropdistancematr > cutoffadja # adjacency matrix after threshold
+    stan <- cropdistancematr * logicalmatr
+    stan <- round(stan, 6) # use round() because betweenness() may have problem when do the calculation
+    cropdistancematrix <- graph.adjacency(stan,mode=c("undirected"),diag=F,weighted=T)#create adjacency matrix
+    ##############################################
+   ## sum of nearest neighbors degree
+   knnpref0<-graph.knn(cropdistancematrix,weights=NA)$knn
+   knnpref0[is.na(knnpref0)]<-0
+   degreematr<-degree(cropdistancematrix)
+   knnpref<-knnpref0*degreematr
+   if(max(knnpref)==0){knnprefp=0}else
+       if(max(knnpref)>0){knnprefp=knnpref/max(knnpref)/6}
+
+   ##############################################
+   #### node degree, node strengh 
+   ####
+   nodestrength<-graph.strength(cropdistancematrix) 
+   nodestrength[is.na(nodestrength)]<-0
+     if(max(nodestrength)==0){nodestr=0}else
+        if(max(nodestrength)>0){nodestr=nodestrength/max(nodestrength)/6}
+   ##############################################
+   #### betweenness centrality
+   #### 
+   between<-betweenness(cropdistancematrix, weights = (1-1/exp(E(cropdistancematrix)$weight)))
+   between[is.na(between)]<-0
+    if(max(between)==0){betweenp=0}else
+        if(max(between)>0){betweenp=between/max(between)/2}
+   ##############################################
+   #### eigenvector and eigenvalues
+   #### 
+   eigenvectorvalues<-evcent(cropdistancematrix)
+   ev<-eigenvectorvalues$vector
+    ev[is.na(ev)]<-0
+    if(max(ev)==0){evp=0}else
+        if(max(ev)!=0){evp=ev/max(ev)/6}
+   ##############################################
+   #### CCRI is a weighted mean of 4 network metric
+   ####    
+ index<-knnprefp+evp+betweenp+nodestr
+   
+   indexpre<-cropRaster
+   indexpre[]<-0
+   indexpre[CellNumber]<- index
+   indexv<-indexpre
+   return(indexv)
+   }
+
+```
+
+# CCRI calculated by negative exponential function 
+
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+
+CCRI_negExponential_function <-function(gamma,cutoffadja, distance_matrix, lon, lat, cropValue, cropRaster, CellNumber)   {
+    ##############################################
+    #### create adjacency matrix
+    ####
+    distancematr <- distance_matrix
+    #---- end of code
+    
+    eulernumber<-exp(1)
+    distancematrexponential <- eulernumber ^ (-gamma * distancematr)# exponential model
+    cropmatr <- cropValue # complete gravity model with crop data
+    cropmatr1 <- matrix(cropmatr,,1) # complete gravity model with crop data
+    cropmatr2 <- matrix(cropmatr,1,)
+    cropmatrix <- cropmatr1 %*% cropmatr2
+    cropmatrix <- as.matrix(cropmatrix)
+    cropdistancematr <- distancematrexponential * cropmatrix
+    logicalmatr <- cropdistancematr > cutoffadja
+    stan <- cropdistancematr * logicalmatr
+    stan <- round(stan, 6) # use round() because betweenness() may have problem when do the calculation
+    cropdistancematrix<-graph.adjacency(stan,mode=c("undirected"),diag=F,weighted=T)#create adjacency matrix
+    ##############################################
+    #### create network for all the selected nodes
+    ####
+    #V(cropdistancematrix)$color=colororder
+    V(cropdistancematrix)$label.cex=0.7
+    edgeweight<-E(cropdistancematrix)$weight*4000
+    E(cropdistancematrix)$color="red"
+
+   knnpref0<-graph.knn(cropdistancematrix,weights=NA)$knn
+   knnpref0[is.na(knnpref0)]<-0
+   degreematr<-degree(cropdistancematrix)
+   knnpref<-knnpref0*degreematr
+   if(max(knnpref)==0){knnprefp=0}else
+       if(max(knnpref)>0){knnprefp=knnpref/max(knnpref)/6}
+
+   ##############################################
+   #### node degree, node strengh 
+   ####
+   nodestrength<-graph.strength(cropdistancematrix) 
+   nodestrength[is.na(nodestrength)]<-0
+     if(max(nodestrength)==0){nodestr=0}else
+        if(max(nodestrength)>0){nodestr=nodestrength/max(nodestrength)/6}
+   ##############################################
+   #### betweenness centrality
+   #### 
+   between<-betweenness(cropdistancematrix)
+   between[is.na(between)]<-0
+    if(max(between)==0){betweenp=0}else
+        if(max(between)>0){betweenp=between/max(between)/2}
+   ##############################################
+   #### eigenvector and eigenvalues
+   #### 
+   eigenvectorvalues<-evcent(cropdistancematrix)
+   ev<-eigenvectorvalues$vector
+    ev[is.na(ev)]<-0
+    if(max(ev)==0){evp=0}else
+        if(max(ev)!=0){evp=ev/max(ev)/6}
+   ##############################################
+   #### plot index layer
+   ####    
+ index<-knnprefp+evp+betweenp+nodestr
+   
+   indexpre<-cropRaster
+   indexpre[]<-0
+   indexpre[CellNumber] <- index
+   indexv<-indexpre
+   return(indexv)
+   
+   }
+
+```
+
+
+## sensitivity analysis CCRI BY Inverse power-law function and negative exponential 
+
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+index1 <- CCRI_powerlaw_function(beta0, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index2 <- CCRI_powerlaw_function(beta, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index3 <- CCRI_powerlaw_function(beta1, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index4 <- CCRI_negExponential_function(gamma00, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index5 <- CCRI_negExponential_function(gamma0, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index6 <- CCRI_negExponential_function(gamma, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index7 <- CCRI_negExponential_function(gamma1, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+
+index8 <- CCRI_negExponential_function(gamma2, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGTM_crop, CropValuesAzero)
+```
+
+# Land mean aggregation resolution
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+#----------- land mean aggregration -----------------------------
+cropharvestAGGLM <- aggregate(cropharvest, fact = Resolution, fun = mean, na.action = na.omit) # land mean
+#----------- crop cropland area for the west hemisphere ----------
+cropharvestAGGLM_crop <- crop(cropharvestAGGLM, west_ext)	
+#----------- Extract cropland density data -----------------------
+CropValues <- getValues(cropharvestAGGLM_crop)
+CropValuesAzero <- which(CropValues > cutoff)
+cropValue <- CropValues[CropValuesAzero]
+#----------- Extract coordinates for "povalue" cells ---------
+lon <- NULL # xmin
+lat <- NULL # ymax
+
+for(i in 1:length(CropValuesAzero)){
+  temp <- extentFromCells(cropharvestAGGLM_crop, CropValuesAzero[i])
+  AVxminO <- temp[1]
+  lon <- c(lon, AVxminO)
+  AVymaxO <- temp[4]
+  lat <- c(lat, AVymaxO)
+}
+# Prepare arguments elements values for the CCRI funtions
+cropdata1 <- data.frame(lon, lat, cropValue)
+adjustConstant <- 2 # to adjust the distance and make sure the distance >1
+latilongimatr <- cropdata1[ ,c(1:2)]# save the latitude and longitude as new matrix  
+#---- use Geosphere package, function distVincentyEllipsoid() is used to calculate the distance, defult distance is meter
+dvse <- distVincentyEllipsoid(c(0,0), cbind(1, 0)) # reference of standard distance in meter for one degree
+    latilongimatr <- as.matrix(latilongimatr)
+    TemMat <- matrix(-999, nrow( latilongimatr),nrow(latilongimatr))
+  
+    for (i in 1:nrow(latilongimatr)) {
+      TemMat[i, ] <- distVincentyEllipsoid(latilongimatr[i,], latilongimatr)/dvse * adjustConstant # distance in meter is recaled as degree
+    }
+distance_matrix <- TemMat
+```
+
+
+## sensitivity analysis CCRI BY Inverse power-law function and negative exponential 
+```{r ,fig.width=11.75, fig.height=6.0, dpi=150}
+index9 <- CCRI_powerlaw_function(beta0, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index10 <- CCRI_powerlaw_function(beta, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index11 <- CCRI_powerlaw_function(beta1, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index12 <- CCRI_negExponential_function(gamma00, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index13 <- CCRI_negExponential_function(gamma0, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index14 <- CCRI_negExponential_function(gamma, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index15 <- CCRI_negExponential_function(gamma1, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+
+index16 <- CCRI_negExponential_function(gamma2, cutoffadja, distance_matrix, lon, lat, cropValue, cropharvestAGGLM_crop, CropValuesAzero)
+```
+
+
+# Mean in cropland connectivity
+```{r ,fig.width=6, fig.height=7, dpi=150}
+mean_index_raster <- sum (index1, index2, index3, index4, index5, index6, index7, index8, 
+                   index9, index10, index11, index12, index13, index14, index15, index16) / 16
+
+mean_index_raster_diff <- mean_index_raster
+Variance_mean_index_raster_west <- mean_index_raster
+
+mean_index_raster_val <- getValues(mean_index_raster)
+zeroId <- which(mean_index_raster_val == 0)
+mean_index_raster[zeroId] <- NaN
+
+#--- remove pixels outside of boundary
+ZeroRaster <- raster("ZeroRaster.tif")
+West_Zero <- crop(ZeroRaster, west_ext)
+mean_index_raster <- disaggregate(mean_index_raster, fact = c(Resolution, Resolution), method ='')
+mean_index_raster_west <- mean_index_raster + West_Zero
+#------------------------------------------------------------
+map_grey_background <- raster("map_grey_background.tif")
+map_grey_background_west <- crop(map_grey_background, west_ext)
+
+plot(map_grey_background_west, col = "grey75",  xaxt='n',  yaxt='n', axes=F, box=F, legend = F, 
+     main=paste('Mean cropland connectivity: Potato'), cex.main=0.7)
+plot(mean_index_raster_west, col = palette1, zlim= c(0.000000000000, 1), xaxt='n',  
+     yaxt='n', axes=F, box=F, add = TRUE)
+plot(countriesLow, add=TRUE, border = "white")
+```
+
+
+# Variance in cropland connectivity
+```{r ,fig.width=6, fig.height=7, dpi=150}
+Variance_mean_index_west <- apply( cbind(index1[], index2[], index3[], index4[], index5[], index6[], 
+                                  index7[], index8[], index9[], index10[], index11[], index12[], 
+                                  index13[], index14[], index15[], index16[]), 1, var)
+
+Variance_mean_index_raster_west[] <- Variance_mean_index_west
+z_var_w <- range(Variance_mean_index_west[which(Variance_mean_index_west > 0)])
+Variance_mean_index_raster_west_disagg <- disaggregate(Variance_mean_index_raster_west, fact = c(Resolution, Resolution), method ='' )
+Variance_mean_index_raster_west_disagg <- Variance_mean_index_raster_west_disagg + West_Zero
+
+plot(map_grey_background_west, col = "grey75",  xaxt='n',  yaxt='n', axes=F, box=F, legend = F, 
+     main=paste('Variance in cropland connectivity:', crop), cex.main=0.7)
+plot(Variance_mean_index_raster_west_disagg, col = palette1, zlim= z_var_w, xaxt='n',  
+     yaxt='n', axes=F, box=F, add = TRUE)
+plot(countriesLow, add=TRUE, border = "white")
+```
+
+
+# Difference between cropland connectivity and density
+
+```{r ,fig.width=6, fig.height=7, dpi=150}
+#-----------------------------------------------------
+CCRI_ID <- which(mean_index_raster_diff[]>0)
+meantotallandW <- sum(cropharvestAGGTM_crop, cropharvestAGGLM_crop, na.rm = T)/2
+
+meanindexcellW <- mean_index_raster_diff[][CCRI_ID]
+meantotallandcellW <- meantotallandW[][CCRI_ID]
+
+rankdifferentW <- rank(meantotallandcellW*(-1))-rank(meanindexcellW*(-1)) #mean cropland minus mean index, negative value means importance of cropland reduce, positive value means importance increase, zero means the importance of cropland doesn't change.
+mean_index_raster_diff[] <- NaN 
+mean_index_raster_diff[][CCRI_ID] <- rankdifferentW
+
+maxrankW <- max(abs(rankdifferentW))
+zr2 <- range(-maxrankW, maxrankW)
+mean_index_raster_diff_disagg <- disaggregate(mean_index_raster_diff, fact = c(Resolution, Resolution), method ='' )
+mean_index_raster_diff_disagg_west <- mean_index_raster_diff_disagg + West_Zero
+
+plot(map_grey_background_west, col = "grey65",  xaxt='n',  yaxt='n', axes=F, box=F, legend = F, 
+     main=paste('Difference cropland density and CCRI:', crop), cex.main=0.7)
+plot(mean_index_raster_diff_disagg_west, col=paldif4, zlim=zr2, xaxt='n',  yaxt='n', axes=F, box=F, add = TRUE)
+plot(countriesLow, add=TRUE, border = "white")
+```
+
+# Saving outcomes
+```{r}
+maintitleMeanCCRI <- paste(crop, "Mean CCRI Ethiopia.tif")
+writeRaster(mean_index_raster_west, maintitleMeanCCRI, overwrite = TRUE)
+
+maintitleVarianceCCRI <- paste(crop, "Variance CCRI Ethiopia.tif")
+writeRaster(Variance_mean_index_raster_west_disagg, maintitleVarianceCCRI, overwrite = TRUE)
+
+maintitleDifferenceCCRI_CD <- paste(crop, "Difference CCRI & CD Ethiopia.tif")
+writeRaster(mean_index_raster_diff_disagg_west, maintitleDifferenceCCRI_CD, overwrite = TRUE)
+```
+
