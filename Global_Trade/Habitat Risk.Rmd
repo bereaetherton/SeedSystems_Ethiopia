@@ -1,0 +1,295 @@
+---
+title: "Risk of disease occurrence at country level"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Cleaning data for country harvested area
+```{r, message=FALSE, warning=FALSE, fig.width=15, fig.height=10}
+library(igraph)
+library(RColorBrewer)
+library(dplyr)
+
+HarvestedA <- read.csv("Potatoes_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Bananas_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Cacao_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Coffee_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("CommonBeans_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Maize_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Peppers_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Potatoes_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Tomatoes_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+#HarvestedA <- read.csv("Wheat_Harvest_2005-2019_FAOSTAT_data_8-22-2021.csv")
+HarvestedArea <- data.frame(HarvestedA)
+HarvestedArea1 <- as_tibble(HarvestedArea) %>%
+  dplyr::select(Area,Year,Value)%>%
+  rename(Country=Area, HarvestArea=Value)
+
+HarvestedArea2<- HarvestedArea1%>%
+  group_by(Country) %>%
+  summarise(HarvestArea = mean(HarvestArea, na.rm = TRUE))%>%
+  filter(HarvestArea > 0) %>%
+  mutate(LogHarvestArea = log(HarvestArea))
+
+par(mfrow = c(2, 2))
+hist(HarvestedArea1$HarvestArea, 
+     breaks = 50,
+     col = "darkred",
+     xlab = "Harvested area in hectares",
+     main = "Histogram of country harvested area")
+hist(HarvestedArea2$HarvestArea, 
+     breaks = 100,
+     ylim = c(0,40),
+     col = "darkred",
+     xlab = "Harvested area in hectares by country",
+     ylab = "Number of countries",
+     main = "Histogram of country harvested area")
+hist(HarvestedArea2$LogHarvestArea, 
+     breaks = 50,
+     ylim = c(0,10),
+     col = "darkred",
+     xlab = "Log value of harvested area in hectares",
+     ylab = "Number of countries",
+     main = "Histogram of country harvested area")
+```
+
+Renaming countries to abbreviations when needed
+```{r, fig.width=10, fig.height=10}
+HarvestedArea2[HarvestedArea2 == c("Bolivia (Plurinational State of)")] <- c("Bolivia")
+HarvestedArea2[HarvestedArea2 == c("China, mainland")] <- c("China")
+HarvestedArea2[HarvestedArea2 == c("Democratic Republic of the Congo")] <- c("Congo-Kinshasa")
+HarvestedArea2[HarvestedArea2 == c("Congo, Democratic Republic of the")] <- c("Congo-Kinshasa")
+HarvestedArea2[HarvestedArea2 == c("Congo, Republic of the")] <- c("Congo Republic")
+HarvestedArea2[HarvestedArea2 == c("Bosnia and Herzegovina")] <- c("BiH")
+HarvestedArea2[HarvestedArea2 == c("Dominican Republic")] <- c("DOM")
+HarvestedArea2[HarvestedArea2 == c("Trinidad and Tobago")] <- c("TT")
+HarvestedArea2[HarvestedArea2 == c("United States of America")] <- c("USA")
+HarvestedArea2[HarvestedArea2 == c("Venezuela (Bolivarian Republic of)")] <- c("Venezuela")
+HarvestedArea2[HarvestedArea2 == c("Central African Republic")] <- c("CF")
+HarvestedArea2[HarvestedArea2 == c("Micronesia (Federated States of)")] <- c("Micronesia")
+HarvestedArea2[HarvestedArea2 == c("United Kingdom of Great Britain and Northern Ireland")] <- c("UK")
+HarvestedArea2[HarvestedArea2 == c("United Arab Emirates")] <- c("UAE")
+HarvestedArea2[HarvestedArea2 == c("China, Taiwan Province of")] <- c("Taiwan")
+HarvestedArea2[HarvestedArea2 == c("Republic of Korea")] <- c("South Korea")
+HarvestedArea2[HarvestedArea2 == c("Russian Federation")] <- c("Russia")
+HarvestedArea2[HarvestedArea2 == c("Iran (Islamic Republic of)")] <- c("Iran")
+HarvestedArea2[HarvestedArea2 == c("Kyrgyzstan")] <- c("Kyr")
+HarvestedArea2[HarvestedArea2 == c("China, Hong Kong SAR")] <- c("Hong Kong")
+HarvestedArea2[HarvestedArea2 == c("Syrian Arab Republic")] <- c("Syria")
+HarvestedArea2[HarvestedArea2 == c("Saudi Arabia")] <- c("SB")
+HarvestedArea2[HarvestedArea2 == c("United Republic of Tanzania")] <- c("Tanzania")
+HarvestedArea2[HarvestedArea2 == c("Republic of Moldova")] <- c("Moldova")
+HarvestedArea2[HarvestedArea2 == c("China, Macao SAR")] <- c("Macao")
+HarvestedArea2[HarvestedArea2 == c("Papua New Guinea")] <- c("PNG")
+HarvestedArea2[HarvestedArea2 == c("Democratic People's Republic of Korea")] <- c("North Korea")
+HarvestedArea2[HarvestedArea2 == c("Lao People's Democratic Republic")] <- c("Laos")
+HarvestedArea2[HarvestedArea2 == c("Saint Vincent and the Grenadines")] <- c("VC")
+HarvestedArea2[HarvestedArea2 == c("Saint Kitts and Nevis")] <- c("KN")
+HarvestedArea2[HarvestedArea2 == c("Antigua and Barbuda")] <- c("ANTI")
+HarvestedArea2[HarvestedArea2 == c("Sao Tome and Principe")] <- c("STD")
+
+#Template:
+#Data[Data == "Old name"] <- "New name"
+#Example:
+#HarvestedArea2[HarvestedArea2 == c("Kyrgyzstan")] <- c("Kyr")
+```
+
+# Cleaning data for pest status:
+```{r, message=FALSE, warning=FALSE, fig.width=15, fig.height=10}
+# Avocados
+#DiseaseStatus <- read.csv("1Raffaelea lauricola.csv")
+
+# Bananas
+#DiseaseStatus <- read.csv("1Fusarium oxysporum f.sp. cubense tropical race 4.csv")
+
+# Cacao
+#DiseaseStatus <- read.csv("3Moniliophthora perniciosa.csv")
+# Coffee
+#DiseaseStatus <- read.csv("2Colletotrichum kahawae.csv")
+
+# Common beans
+#DiseaseStatus <- read.csv("1Groundnut rosette virus.csv")
+
+# Maize
+#DiseaseStatus <- read.csv("1Maize lethal necrosis disease.csv")
+
+# Peppers
+#DiseaseStatus <- read.csv("2Pepper veinal mottle virus.csv")
+
+# Potatoes
+#DiseaseStatus <- read.csv("4Phytophthora erythroseptica var. erythroseptica.csv")
+
+# Tomatoes
+#DiseaseStatus <- read.csv("7Tuta absoluta.csv")
+
+# Wheat
+#DiseaseStatus <- read.csv("4Tilletia indica.csv")
+DiseaseStatus <- read.csv("Ralstonia solanacearum race 3.csv")
+
+DiseaseStatus0 <- as_tibble(DiseaseStatus)%>%
+  dplyr::select(Region, Presence, Extent) %>%
+  mutate(Extent = ifelse(Extent == "-" & Presence == "Present", "Present", Extent))
+
+a = (DiseaseStatus0[grepl(" - ", DiseaseStatus0$Region), ])
+b = a$Region
+DiseaseStatus0 = DiseaseStatus0 %>%
+  filter(!Region %in% b)
+
+DiseaseStatus1 <- as_tibble(DiseaseStatus0)%>%
+  dplyr::select(Region, Extent)
+
+DiseaseStatus1.1 <- DiseaseStatus1 %>%
+  dplyr::select(Extent)
+
+DiseaseStatus1.1[DiseaseStatus1.1 == "Widespread"] <- c("5")
+DiseaseStatus1.1[DiseaseStatus1.1 == "Native"] <- c("5")
+DiseaseStatus1.1[DiseaseStatus1.1 == "Present"] <- c("4")
+DiseaseStatus1.1[DiseaseStatus1.1 == "Localized"] <- c("3")
+DiseaseStatus1.1[DiseaseStatus1.1 == "Few occurrences"] <- c("2")
+DiseaseStatus1.1[DiseaseStatus1.1 == "Transient under eradication"] <- c("1")
+
+DiseaseStatus1.1 <- DiseaseStatus1.1%>%
+  mutate(PestLocalPop1=Extent)
+DiseaseStatus1.1[,2] <- lapply(DiseaseStatus1.1[,2], as.numeric)
+
+DiseaseStatus1 <- DiseaseStatus1%>%
+  mutate(PestLocalPop1=DiseaseStatus1.1$PestLocalPop1)%>%
+  rename(Country = Region)
+#dat[, l2] <- lapply(dat[, l2], as.numeric)
+#rep(1, length.out = length(DiseaseStatus1[,3] == "Present"))
+DiseaseStatus1[DiseaseStatus1 == c("United States")] <- c("USA")
+
+DiseaseStatus1[DiseaseStatus1 == c("Bolivia (Plurinational State of)")] <- c("Bolivia")
+DiseaseStatus1[DiseaseStatus1 == c("China, mainland")] <- c("China")
+DiseaseStatus1[DiseaseStatus1 == c("Democratic Republic of the Congo")] <- c("Congo-Kinshasa")
+DiseaseStatus1[DiseaseStatus1 == c("Congo, Democratic Republic of the")] <- c("Congo-Kinshasa")
+DiseaseStatus1[DiseaseStatus1 == c("Congo, Republic of the")] <- c("Congo Republic")
+DiseaseStatus1[DiseaseStatus1 == c("Bosnia and Herzegovina")] <- c("BiH")
+DiseaseStatus1[DiseaseStatus1 == c("Dominican Republic")] <- c("DOM")
+DiseaseStatus1[DiseaseStatus1 == c("Trinidad and Tobago")] <- c("TT")
+DiseaseStatus1[DiseaseStatus1 == c("United States of America")] <- c("USA")
+DiseaseStatus1[DiseaseStatus1 == c("Venezuela (Bolivarian Republic of)")] <- c("Venezuela")
+DiseaseStatus1[DiseaseStatus1 == c("Central African Republic")] <- c("CF")
+DiseaseStatus1[DiseaseStatus1 == c("Micronesia (Federated States of)")] <- c("Micronesia")
+DiseaseStatus1[DiseaseStatus1 == c("United Kingdom of Great Britain and Northern Ireland")] <- c("UK")
+DiseaseStatus1[DiseaseStatus1 == c("United Arab Emirates")] <- c("UAE")
+DiseaseStatus1[DiseaseStatus1 == c("China, Taiwan Province of")] <- c("Taiwan")
+DiseaseStatus1[DiseaseStatus1 == c("Republic of Korea")] <- c("South Korea")
+DiseaseStatus1[DiseaseStatus1 == c("Russian Federation")] <- c("Russia")
+DiseaseStatus1[DiseaseStatus1 == c("Iran (Islamic Republic of)")] <- c("Iran")
+DiseaseStatus1[DiseaseStatus1 == c("Kyrgyzstan")] <- c("Kyr")
+DiseaseStatus1[DiseaseStatus1 == c("China, Hong Kong SAR")] <- c("Hong Kong")
+DiseaseStatus1[DiseaseStatus1 == c("Syrian Arab Republic")] <- c("Syria")
+DiseaseStatus1[DiseaseStatus1 == c("Saudi Arabia")] <- c("SB")
+DiseaseStatus1[DiseaseStatus1 == c("United Republic of Tanzania")] <- c("Tanzania")
+DiseaseStatus1[DiseaseStatus1 == c("Republic of Moldova")] <- c("Moldova")
+DiseaseStatus1[DiseaseStatus1 == c("China, Macao SAR")] <- c("Macao")
+DiseaseStatus1[DiseaseStatus1 == c("Papua New Guinea")] <- c("PNG")
+DiseaseStatus1[DiseaseStatus1 == c("Democratic People's Republic of Korea")] <- c("North Korea")
+DiseaseStatus1[DiseaseStatus1 == c("Lao People's Democratic Republic")] <- c("Laos")
+DiseaseStatus1[DiseaseStatus1 == c("Saint Vincent and the Grenadines")] <- c("VC")
+DiseaseStatus1[DiseaseStatus1 == c("Saint Kitts and Nevis")] <- c("KN")
+DiseaseStatus1[DiseaseStatus1 == c("Antigua and Barbuda")] <- c("ANTI")
+DiseaseStatus1[DiseaseStatus1 == c("Sao Tome and Principe")] <- c("STD")
+
+DiseaseStatus1
+```
+# Risk of disease occurrence: disease source strenght at countries of origin
+```{r, message=FALSE}
+library(tidyverse)
+
+DiseaseRisk1 <- merge(HarvestedArea2, DiseaseStatus1, by = 'Country', all = TRUE)
+
+DiseaseRisk1 <- DiseaseRisk1 %>%
+  replace_na(list(HarvestArea = 0, LogHarvestArea = 0, PestLocalPop1 = 0, Extent = "Absent")) %>%
+  mutate(RelPestLocalPop1 = 1+PestLocalPop1/5)
+
+#Number of countries infected divided by the producing countries:
+n <- length(DiseaseStatus1$Country)
+N <- length(HarvestedArea2$Country)
+nN <- n/N
+
+#Calculating country geographic range (δ)
+DiseaseRisk1 <- DiseaseRisk1 %>%
+  mutate(AbsGeographic_risk = LogHarvestArea*nN) %>%
+  replace_na(list(AbsGeographic_risk = 0))
+maxi=max(DiseaseRisk1$AbsGeographic_risk)
+
+DiseaseRisk1 <- DiseaseRisk1 %>%
+  mutate(RelGeographic_risk = (5*AbsGeographic_risk/maxi))
+
+#Habitat specificity (ℵ): for example, Raffaela lauricola
+primaryHost=1
+secondaryHost=0
+
+DiseaseRisk1 <- DiseaseRisk1 %>%
+  mutate(Habitat_specificity = 1+log(2*primaryHost+1*secondaryHost))
+
+#Potential pest abundance (φ): Source or risk of release (PestAbundance)
+DiseaseRisk1 <- DiseaseRisk1 %>%
+  mutate(PestAbundance = ((PestLocalPop1^2)+(RelGeographic_risk^2))^(.5)*(Habitat_specificity))
+```
+
+# Risk of disease introduction at country destination:
+free-disease host population
+```{r}
+#Number of countries non-infected divided by the producing countries:
+n <- length(DiseaseStatus1$Country)
+N <- length(HarvestedArea2$Country)
+nNIntro <- (1 - n/N)
+
+#Calculating country geographic range (δ)
+DiseaseRisk2 <- DiseaseRisk1 %>%
+  mutate(AbsGeographic_risk2 = LogHarvestArea*nNIntro) %>%
+  replace_na(list(AbsGeographic_risk2 = 0))
+maxi2=max(DiseaseRisk2$AbsGeographic_risk2)
+
+DiseaseRisk2 <- DiseaseRisk2 %>%
+  mutate(RelGeographic_risk2 = 5*AbsGeographic_risk2/maxi2,
+         PestLocalPop2=ifelse(PestLocalPop1 %in% 5, 0,
+                              ifelse(PestLocalPop1 %in% 4, 1, ifelse(PestLocalPop1 %in% 3, 2, ifelse(PestLocalPop1 %in% 2, 3, ifelse(PestLocalPop1 %in% 1, 4, 5))))))
+
+#Potential pest abundance (φ): Source or risk of release (PestAbundance)
+DiseaseRisk2 <- DiseaseRisk2 %>%
+  mutate(PestAbundance2 = (((RelGeographic_risk2)^2+(PestLocalPop2)^2)^(.5))*Habitat_specificity)
+miniP=min(DiseaseRisk2$PestAbundance2)
+DiseaseRisk2=DiseaseRisk2 %>%
+  mutate(RelPestAbundance2 = (PestAbundance2-miniP)) %>%
+  mutate(RelPestAbundance2 = 5*RelPestAbundance2/max(RelPestAbundance2))
+#write.csv(DiseaseRisk2, "Avocados_PestAbundance_Global_Raffaelea_lauricola.csv")
+
+#write.csv(DiseaseRisk2, "Bananas_PestAbundance_Global_Fusarium_oxysporum_TR4.csv")
+
+#write.csv(DiseaseRisk2, "Cacao_PestAbundance_Global_Moniliophthora_perniciosa.csv")
+
+#write.csv(DiseaseRisk2, "Coffee_PestAbundance_Global_Colletotrichum_kahawae.csv")
+
+#write.csv(DiseaseRisk2, "CommonBeans_PestAbundance_Global_Groundnut_rostte_virus.csv")
+
+#write.csv(DiseaseRisk2, "Maize_PestAbundance_Global_Maize_lethal_necrosis_disease.csv")
+
+#write.csv(DiseaseRisk2, "Peppers_PestAbundance_Global_Pepper_veinal_mottle_virus.csv")
+
+write.csv(DiseaseRisk2, "Potatoes_PestAbundance_Global_Ralstonia_solanacearum_race3_biovar2.csv")
+
+#write.csv(DiseaseRisk2, "Tomatoes_PestAbundance_Global_Tuta_absoluta.csv")
+
+#write.csv(DiseaseRisk2, "Wheat_PestAbundance_Global_Tilletia_indica.csv")
+```
+
+
+```{r, dpi=200, fig.width=6, fig.height=7}
+par(mfrow=c(2,1))
+hist(DiseaseRisk1$PestAbundance,
+     col = "darkred",
+     xlab = "Risk at country level",
+     ylab = "Number of countries",
+     main = paste("Histogram of risk of disease occurrence"))
+hist(DiseaseRisk2$RelPestAbundance2,
+     col = "darkblue",
+     xlab = "Risk at country level",
+     ylab = "Number of countries",
+     main = paste("Histogram of risk of free-disease host"))
+```
+

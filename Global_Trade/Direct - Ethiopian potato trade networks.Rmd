@@ -1,0 +1,299 @@
+---
+title: "Ethiopian trade network"
+author: "Aaron Plex"
+date: "10/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Network of trade directly to and from Ethiopia
+
+```{r, message=FALSE}
+library(tidyverse)
+library(dplyr)
+library(igraph)
+library(RColorBrewer)
+library(reshape2)
+library(NetIndices)
+library(ggraph)
+library(graphlayouts)
+library(extrafont)
+library(ggrepel)
+library(ggpubr)
+```
+
+
+```{r}
+cropFAOdata1 <- read.csv("Export_FAOSTAT_data_10-23-2021.csv")
+cropFAOdata1 <- cropFAOdata1 %>%
+  dplyr::select(Partner.Countries, Reporter.Countries, Year, Value) %>%
+  rename(ExportCountry = Reporter.Countries, ImportCountry = Partner.Countries) %>%
+  mutate(Value = Value/2)
+cropFAOdata1 <- cropFAOdata1 %>%
+  dplyr::select(ExportCountry, ImportCountry, Year, Value)
+
+cropFAOdata2 <- read.csv("Import_FAOSTAT_data_10-23-2021.csv")
+cropFAOdata2 <- cropFAOdata2 %>%
+  dplyr::select(Partner.Countries, Reporter.Countries, Year, Value) %>%
+  rename(ExportCountry = Partner.Countries, ImportCountry = Reporter.Countries) %>%
+  mutate(Value = Value/2)
+
+cropFAOdata <- rbind(cropFAOdata1, cropFAOdata2)
+cropFAOdata <- subset(cropFAOdata, cropFAOdata$ImportCountry!="Unspecified Area")
+cropFAOdata <- subset(cropFAOdata, cropFAOdata$ExportCountry!="Unspecified Area")
+
+cropFAOdata_groupMean <- cropFAOdata %>%
+  group_by(ExportCountry, ImportCountry) %>%
+  summarise(Value_YearMean = sum(Value, na.rm = TRUE)/15) %>%
+  filter(Value_YearMean > 0)
+```
+
+## Abbreviating countries and creating a graph data:
+
+```{r}
+NetworkEdges10 <- cropFAOdata_groupMean
+NetworkEdges10 <- NetworkEdges10 %>%
+  group_by(ExportCountry, ImportCountry) %>%
+  filter(Value_YearMean>0)
+
+#Replacing long names to abbreviations in edgelist:
+NetworkEdges10[NetworkEdges10 == c("Bolivia (Plurinational State of)")] <- c("Bolivia")
+NetworkEdges10[NetworkEdges10 == c("China, mainland")] <- c("China")
+NetworkEdges10[NetworkEdges10 == c("Democratic Republic of the Congo")] <- c("Congo-Kinshasa")
+NetworkEdges10[NetworkEdges10 == c("Congo, Democratic Republic of the")] <- c("Congo-Kinshasa")
+NetworkEdges10[NetworkEdges10 == c("Congo, Republic of the")] <- c("Congo Republic")
+NetworkEdges10[NetworkEdges10 == c("Bosnia and Herzegovina")] <- c("BiH")
+NetworkEdges10[NetworkEdges10 == c("Dominican Republic")] <- c("DOM")
+NetworkEdges10[NetworkEdges10 == c("Trinidad and Tobago")] <- c("TT")
+NetworkEdges10[NetworkEdges10 == c("United States of America")] <- c("USA")
+NetworkEdges10[NetworkEdges10 == c("Venezuela (Bolivarian Republic of)")] <- c("Venezuela")
+NetworkEdges10[NetworkEdges10 == c("Central African Republic")] <- c("CF")
+NetworkEdges10[NetworkEdges10 == c("Micronesia (Federated States of)")] <- c("Micronesia")
+NetworkEdges10[NetworkEdges10 == c("United Kingdom of Great Britain and Northern Ireland")] <- c("UK")
+NetworkEdges10[NetworkEdges10 == c("United Arab Emirates")] <- c("UAE")
+NetworkEdges10[NetworkEdges10 == c("China, Taiwan Province of")] <- c("Taiwan")
+NetworkEdges10[NetworkEdges10 == c("Republic of Korea")] <- c("South Korea")
+NetworkEdges10[NetworkEdges10 == c("Russian Federation")] <- c("Russia")
+NetworkEdges10[NetworkEdges10 == c("Iran (Islamic Republic of)")] <- c("Iran")
+NetworkEdges10[NetworkEdges10 == c("Kyrgyzstan")] <- c("Kyr")
+NetworkEdges10[NetworkEdges10 == c("China, Hong Kong SAR")] <- c("Hong Kong")
+NetworkEdges10[NetworkEdges10 == c("Syrian Arab Republic")] <- c("Syria")
+NetworkEdges10[NetworkEdges10 == c("Saudi Arabia")] <- c("SB")
+NetworkEdges10[NetworkEdges10 == c("United Republic of Tanzania")] <- c("Tanzania")
+NetworkEdges10[NetworkEdges10 == c("Republic of Moldova")] <- c("Moldova")
+NetworkEdges10[NetworkEdges10 == c("China, Macao SAR")] <- c("Macao")
+NetworkEdges10[NetworkEdges10 == c("Papua New Guinea")] <- c("PNG")
+NetworkEdges10[NetworkEdges10 == c("Democratic People's Republic of Korea")] <- c("North Korea")
+NetworkEdges10[NetworkEdges10 == c("Lao People's Democratic Republic")] <- c("Laos")
+NetworkEdges10[NetworkEdges10 == c("Saint Vincent and the Grenadines")] <- c("VC")
+NetworkEdges10[NetworkEdges10 == c("Saint Kitts and Nevis")] <- c("KN")
+NetworkEdges10[NetworkEdges10 == c("Antigua and Barbuda")] <- c("ANTI")
+NetworkEdges10[NetworkEdges10 == c("Sao Tome and Principe")] <- c("STD")
+
+# Generating a country node list
+CountryNodes1 <- as.vector(NetworkEdges10$ExportCountry)
+CountryNodes2 <- as.vector(NetworkEdges10$ImportCountry)
+CountryNodes <- rbind(CountryNodes1, CountryNodes2)
+CountryNodes <- as.vector(CountryNodes)
+CountryNodes <- as.matrix(CountryNodes)
+colnames(CountryNodes) <- c("ExportCountry")
+CountryNodes <- unique(CountryNodes)
+
+#Loading the country nodes:
+NetworkNodes10 <- CountryNodes
+
+# Asigning pest status and pest abundance to country nodes:
+PestAbundance <- read.csv("Potatoes_PestAbundance_Global_Ralstonia_solanacearum_race3_biovar2.csv")
+PestAbundance <- PestAbundance %>%
+  rename(ExportCountry = Country)
+
+NetworkNodes10 = merge(PestAbundance, NetworkNodes10, by = 'ExportCountry', all.y = TRUE)
+NetworkNodes10 <- NetworkNodes10 %>%
+  distinct(ExportCountry, .keep_all = TRUE)
+NetworkNodes10 <- NetworkNodes10 %>%
+  replace_na(list(Extent = "Absent",
+                  HarvestArea = 0,
+                  LogHarvestArea = 0,
+                  PestLocalPop1 = 0,
+                  RelPestLocalPop1 = 1,
+                  AbsGeographic_risk = 0,
+                  RelGeographic_risk = 1,
+                  Habitat_specificity = 1+log(1),
+                  PestAbundance = 1*1*(1+log(1)),
+                  AbsGeographic_risk2 = 0,
+                  RelGeographic_risk2 =1,
+                  PestAbundance2 = 1*(1+log(1))/1)) %>%
+  dplyr::select(-X)
+
+Nodelist10 <- data.frame(NetworkNodes10)
+## Creating a vector for distinguish edges associated with Central American countries:
+NetworkEdges10 <- NetworkEdges10 %>%
+  mutate(region1 = ifelse(ExportCountry == "Guatemala", 1, 0),
+         region2 = ifelse(ExportCountry == "Honduras", 1, 0),
+         region3 = ifelse(ExportCountry == "Belize", 1, 0),
+         region4 = ifelse(ExportCountry == "El Salvador", 1, 0),
+         region5 = ifelse(ExportCountry == "Nicaragua", 1, 0),
+         region6 = ifelse(ExportCountry == "Costa Rica", 1, 0),
+         region7 = ifelse(ExportCountry == "Panama", 1, 0),
+         region8 = ifelse(ExportCountry == "Guatemala", 1, 0),
+         region9 = ifelse(ImportCountry == "Belize", 1, 0),
+         region10 = ifelse(ImportCountry == "Honduras", 1, 0),
+         region11 = ifelse(ImportCountry == "El Salvador", 1, 0),
+         region12 = ifelse(ImportCountry == "Nicaragua", 1, 0),
+         region13 = ifelse(ImportCountry == "Costa Rica", 1, 0),
+         region14 = ifelse(ImportCountry == "Panama", 1, 0),
+         region = region1+region2+region3+region4+region5+region6+region7+region8+region9+region10+region11+region12+region13+region14,
+         Region = ifelse(region >= 1, "Central America", "Other region"))
+
+NetworkEdges10 <- NetworkEdges10 %>%
+  dplyr::select(ExportCountry, ImportCountry, Value_YearMean, Region)
+
+Edgelist10 <- data.frame(NetworkEdges10)
+Edgelist10 <- Edgelist10 %>%
+  mutate(Trade = log(1+Value_YearMean))
+
+Network10 <- graph_from_data_frame(d= Edgelist10, 
+                                  vertices = Nodelist10, 
+                                  directed = T)
+```
+
+
+## Combining trade risk matrix with pest occurrence risk matrix
+```{r}
+#Extracting trade matrix
+logTradeMat = as.matrix(as_adjacency_matrix(Network10, attr = "Trade"))
+tradeMatrix=logTradeMat
+
+#Extracting pest occurrence matrix
+pestmatr = Nodelist10$PestAbundance 
+pestmatr1 <- matrix(pestmatr, , 1 )
+pestmatr1=pestmatr1+1
+pestmatr2 <- matrix(pestmatr, 1, )
+pestmatr2=pestmatr2+2
+pestmatrix <- pestmatr1 %*% (1/pestmatr2)
+pestmatrix=as.matrix(pestmatrix)
+
+columnnames=c(Nodelist10$ExportCountry)
+colnames(pestmatrix)=c(columnnames)
+rownames(pestmatrix)=c(columnnames)
+
+#Gravity model for pest occurrence risk matrix 
+#times trade risk matrix
+#I propose the name of this combination:
+#Geographic trade risk of disease release
+geoTradeRisk = pestmatrix * tradeMatrix
+
+Edgelist10.1=melt(geoTradeRisk) %>%
+  rename(ExportCountry=Var1,
+         ImportCountry=Var2,
+         GeoTradeRisk=value) %>%
+  mutate(GeoTradeRisk=replace(GeoTradeRisk, GeoTradeRisk == 0.0000000, 0)) %>%
+  filter(GeoTradeRisk>0)
+Edgelist10.1 = merge(Edgelist10,
+                     Edgelist10.1, 
+                     by = c("ExportCountry","ImportCountry"), all.x = TRUE)
+#Generating a graph object
+Network10.1 = graph_from_data_frame(d= Edgelist10.1, 
+                                  vertices = Nodelist10, 
+                                  directed = T)
+```
+
+
+# Network features on disease risk
+
+## Node out strength: Potato trade risk of exportation
+```{r, fig.width=11, fig.height=8, dpi=300}
+E(Network10.1)$weight <- E(Network10.1)$GeoTradeRisk
+
+Strength10 <- strength(Network10.1, v = V(Network10.1), mode = c("out"), weights = E(Network10.1)$weight)
+
+StrengthI10 <- ggraph(Network10.1, layout = "centrality", cent = Strength10)+
+  geom_edge_link2(aes(edge_width = GeoTradeRisk, 
+                      start_cap = circle(.3), 
+                      end_cap = circle(.7)),                  
+                  edge_colour = "darkgrey",
+                  arrow = arrow(angle = 25, 
+                                length = unit(0.15, "inches")))+
+  geom_node_point(aes(fill = Extent, 
+                      color = Extent,
+                      size = PestAbundance), 
+                  shape = 21)+
+  geom_node_text(aes(label = name), size = 6, 
+                 repel = TRUE)+
+  scale_edge_width_continuous(range = c(0.25,1.5))+
+  scale_size_continuous(range = c(5,15))+
+  scale_fill_manual(values = c("Absent" = "#FCB519FF", "Few occurrences" = "#F98C0AFF", "Localized" =  "#BB3754FF", "Present" = "#89226AFF"))+
+  scale_color_manual(values = c("Absent" = "#FCB519FF", "Few occurrences" = "#F98C0AFF", "Localized" =  "#BB3754FF", "Present" = "#89226AFF"))+
+  coord_fixed()+
+  theme_graph()+
+  theme(legend.position = "right", 
+        legend.key.size = unit(1, 'cm'))
+
+StrengthI10 <- StrengthI10 + 
+  guides(fill = guide_legend(title = "RSr3b2",
+                                title.position = "top", 
+                                override.aes = list(size = 10), 
+                             title.theme = element_text(size = 15), 
+                             label.theme = element_text(size = 15)),
+         color = guide_legend(title = "RSr3b2",
+                                title.position = "top", 
+                                override.aes = list(size = 10), 
+                             title.theme = element_text(size = 15), 
+                             label.theme = element_text(size = 15)),
+            size = guide_legend(title = "Pathogen invasion potential", 
+                                title.theme = element_text(size = 15), 
+                                label.theme = element_text(size = 15)), 
+            edge_width = guide_legend(title = "Pathogen trade \nmovement potential", 
+                                      title.theme = element_text(size = 15), 
+                                      label.theme = element_text(size = 15))
+         )
+StrengthI10
+```
+
+```{r, fig.width=11, fig.height=8, dpi=300}
+StrengthI10 <- ggraph(Network10.1, layout = "stress")+
+  geom_edge_link2(aes(edge_width = GeoTradeRisk, 
+                      start_cap = circle(.3), 
+                      end_cap = circle(.7)),                  
+                  edge_colour = "darkgrey",
+                  arrow = arrow(angle = 25, 
+                                length = unit(0.15, "inches")))+
+  geom_node_point(aes(fill = Extent,
+                      color = Extent,
+                      size = PestAbundance), 
+                  shape = 21)+
+  geom_node_text(aes(label = name), size = 6, 
+                 repel = TRUE)+
+  scale_edge_width_continuous(range = c(0.25,1.5))+
+  scale_size_continuous(range = c(5,15))+
+  scale_fill_manual(values = c("Absent" = "#FCB519FF", "Few occurrences" = "#F98C0AFF", "Localized" =  "#BB3754FF", "Present" = "#89226AFF"))+
+  scale_color_manual(values = c("Absent" = "#FCB519FF", "Few occurrences" = "#F98C0AFF", "Localized" =  "#BB3754FF", "Present" = "#89226AFF"))+
+  coord_fixed()+
+  theme_graph()+
+  theme(legend.position = "right", 
+        legend.key.size = unit(1, 'cm'))
+
+StrengthI10 <- StrengthI10 + 
+  guides(fill = guide_legend(title = "RSr3b2",
+                                title.position = "top", 
+                                override.aes = list(size = 10), 
+                             title.theme = element_text(size = 15), 
+                             label.theme = element_text(size = 15)),
+         color = guide_legend(title = "RSr3b2",
+                                title.position = "top", 
+                                override.aes = list(size = 10), 
+                             title.theme = element_text(size = 15), 
+                             label.theme = element_text(size = 15)),
+            size = guide_legend(title = "Pathogen invasion potential", 
+                                title.theme = element_text(size = 15), 
+                                label.theme = element_text(size = 15)), 
+            edge_width = guide_legend(title = "Pathogen trade \nmovement potential", 
+                                      title.theme = element_text(size = 15), 
+                                      label.theme = element_text(size = 15))
+         )
+StrengthI10
+```
+
